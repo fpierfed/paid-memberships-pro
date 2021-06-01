@@ -238,14 +238,14 @@ if ( isset( $_REQUEST['username'] ) ) {
 	$username = "";
 }
 if ( isset( $_REQUEST['password'] ) ) {
-	$password = sanitize_text_field($_REQUEST['password']);
+	$password = $_REQUEST['password'];
 } else {
 	$password = "";
 }
 if ( isset( $_REQUEST['password2_copy'] ) ) {
 	$password2 = $password;
 } elseif ( isset( $_REQUEST['password2'] ) ) {
-	$password2 = sanitize_text_field($_REQUEST['password2']);
+	$password2 = $_REQUEST['password2'];
 } else {
 	$password2 = "";
 }
@@ -393,7 +393,7 @@ if ( $submit && $pmpro_msgt != "pmpro_error" ) {
 		if ( $pmpro_msgt != "pmpro_error" ) {
 			//check recaptcha first
 			global $recaptcha, $recaptcha_validated;
-			if ( ! $skip_account_fields && ( $recaptcha == 2 || ( $recaptcha == 1 && pmpro_isLevelFree( $pmpro_level ) ) ) ) {
+			if (  $recaptcha == 2 || ( $recaptcha == 1 && pmpro_isLevelFree( $pmpro_level ) ) ) {
 
 				global $recaptcha_privatekey;
 
@@ -604,7 +604,13 @@ if ( ! empty( $pmpro_confirmed ) ) {
 		$enddate = apply_filters( "pmpro_checkout_end_date", $enddate, $user_id, $pmpro_level, $startdate );
 
 		//check code before adding it to the order
-		$code_check = pmpro_checkDiscountCode( $discount_code, $pmpro_level->id, true );
+		global $pmpro_checkout_level_ids; // Set by MMPU.
+		if ( isset( $pmpro_checkout_level_ids ) ) {
+			$code_check = pmpro_checkDiscountCode( $discount_code, $pmpro_checkout_level_ids, true );
+		} else {
+			$code_check = pmpro_checkDiscountCode( $discount_code, $pmpro_level->id, true );
+		}
+		
 		if ( $code_check[0] == false ) {
 			//error
 			$pmpro_msg  = $code_check[1];
@@ -674,6 +680,8 @@ if ( ! empty( $pmpro_confirmed ) ) {
 				}
 
 				$wpdb->query( "INSERT INTO $wpdb->pmpro_discount_codes_uses (code_id, user_id, order_id, timestamp) VALUES('" . $discount_code_id . "', '" . $user_id . "', '" . intval( $code_order_id ) . "', '" . current_time( "mysql" ) . "')" );
+				
+				do_action( 'pmpro_discount_code_used', $discount_code_id, $user_id, $code_order_id );
 			}
 
 			//save billing info ect, as user meta

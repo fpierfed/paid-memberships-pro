@@ -549,6 +549,8 @@
 			
 			if(!$user || !$invoice)
 				return false;
+
+			$membership_level = pmpro_getSpecificMembershipLevelForUser( $user->ID, $invoice->membership_id );
 			
 			$this->email = $user->user_email;
 			$this->subject = sprintf(__("Membership Payment Failed at %s", "paid-memberships-pro"), get_option("blogname"));
@@ -559,8 +561,8 @@
 								"user_login" => $user->user_login,
 								"sitename" => get_option("blogname"),
 								"siteemail" => pmpro_getOption("from_email"),
-								"membership_id" => $user->membership_level->id,
-								"membership_level_name" => $user->membership_level->name,
+								"membership_id" => $membership_level->id,
+								"membership_level_name" => $membership_level->name,
 								"display_name" => $user->display_name,
 								"user_email" => $user->user_email,									
 								"billing_name" => $invoice->billing->name,
@@ -596,6 +598,7 @@
 				return false;
 				
 			$user = get_userdata($invoice->user_id);
+			$membership_level = pmpro_getSpecificMembershipLevelForUser( $user->ID, $invoice->membership_id );
 			
 			$this->email = $email;
 			$this->subject = sprintf(__("Membership Payment Failed For %s at %s", "paid-memberships-pro"), $user->display_name, get_option("blogname"));
@@ -606,8 +609,8 @@
 								"user_login" => $user->user_login,
 								"sitename" => get_option("blogname"),
 								"siteemail" => pmpro_getOption("from_email"),
-								"membership_id" => $user->membership_level->id,
-								"membership_level_name" => $user->membership_level->name,
+								"membership_id" => $membership_level->id,
+								"membership_level_name" => $membership_level->name,
 								"display_name" => $user->display_name,
 								"user_email" => $user->user_email,									
 								"billing_name" => $invoice->billing->name,
@@ -860,10 +863,10 @@
 
 			if(!empty($user->membership_level) && !empty($user->membership_level->name)) {
 				$membership_level_name = $user->membership_level->name;
-				$membership_level_id = '';
+				$membership_level_id = $user->membership_level->id;
 			} else {
 				$membership_level_name = __('None', 'paid-memberships-pro');
-				$membership_level_id = $user->membership_level->id;
+				$membership_level_id = '';
 			}
 						
 			$this->email = $user->user_email;
@@ -910,10 +913,10 @@
 						
 			if(!empty($user->membership_level) && !empty($user->membership_level->name)) {
 				$membership_level_name = $user->membership_level->name;
-				$membership_level_id = '';
+				$membership_level_id = $user->membership_level->id;
 			} else {
 				$membership_level_name = __('None', 'paid-memberships-pro');
-				$membership_level_id = $user->membership_level->id;
+				$membership_level_id = '';
 			}
 
 			$this->email = get_bloginfo("admin_email");

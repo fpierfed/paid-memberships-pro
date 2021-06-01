@@ -21,8 +21,8 @@ if ( isset( $_REQUEST['l'] ) ) {
 	$l = false;
 }
 
-if ( isset( $_REQUEST['discount_code'] ) ) {
-	$discount_code = intval( $_REQUEST['discount_code'] );
+if ( isset( $_REQUEST['discount-code'] ) ) {
+	$discount_code = intval( $_REQUEST['discount-code'] );
 } else {
 	$discount_code = false;
 }
@@ -230,9 +230,15 @@ if ( ! empty( $_REQUEST['save'] ) ) {
 	if ( ! in_array( 'tax', $read_only_fields ) && isset( $_POST['tax'] ) ) {
 		$order->tax = sanitize_text_field( $_POST['tax'] );
 	}
-	if ( ! in_array( 'couponamount', $read_only_fields ) && isset( $_POST['couponamount'] ) ) {
-		$order->couponamount = sanitize_text_field( $_POST['couponamount'] );
+
+	// Hiding couponamount by default.
+	$coupons = apply_filters( 'pmpro_orders_show_coupon_amounts', false );
+	if ( ! empty( $coupons ) ) {
+		if ( ! in_array( 'couponamount', $read_only_fields ) && isset( $_POST['couponamount'] ) ) {
+			$order->couponamount = sanitize_text_field( $_POST['couponamount'] );
+		}
 	}
+
 	if ( ! in_array( 'total', $read_only_fields ) && isset( $_POST['total'] ) ) {
 		$order->total = sanitize_text_field( $_POST['total'] );
 	}
@@ -271,6 +277,14 @@ if ( ! empty( $_REQUEST['save'] ) ) {
 		global $allowedposttags;
 		$order->notes = wp_kses( wp_unslash( $_REQUEST['notes'] ), $allowedposttags );
 	}
+	if ( ! in_array( 'timestamp', $read_only_fields ) && isset( $_POST['ts_year'] ) && isset( $_POST['ts_month'] ) && isset( $_POST['ts_day'] ) && isset( $_POST['ts_hour'] ) && isset( $_POST['ts_minute'] ) ) {
+		$year   = intval( $_POST['ts_year'] );
+		$month  = intval( $_POST['ts_month'] );
+		$day    = intval( $_POST['ts_day'] );
+		$hour   = intval( $_POST['ts_hour'] );
+		$minute = intval( $_POST['ts_minute'] );
+		$order->timestamp = $date = get_gmt_from_date( $year . '-' . $month . '-' . $day . ' ' . $hour . ':' . $minute . ':00' , 'U' );;
+	}
 
 	// affiliate stuff
 	$affiliates = apply_filters( 'pmpro_orders_show_affiliate_ids', false );
@@ -292,15 +306,6 @@ if ( ! empty( $_REQUEST['save'] ) ) {
 	// save
 	if ( $order->saveOrder() !== false && $nonceokay ) {
 		$order_id = $order->id;
-		
-		// handle timestamp
-		if ( $order->updateTimestamp( intval( $_POST['ts_year'] ), intval( $_POST['ts_month'] ), intval( $_POST['ts_day'] ), intval( $_POST['ts_hour'] ) . ':' . intval( $_POST['ts_minute'] ) . ':00' ) !== false ) {
-			$pmpro_msg  = __( 'Order saved successfully.', 'paid-memberships-pro' );
-			$pmpro_msgt = 'success';
-		} else {
-			$pmpro_msg  = __( 'Error updating order timestamp.', 'paid-memberships-pro' );
-			$pmpro_msgt = 'error';
-		}
 	} else {
 		$pmpro_msg  = __( 'Error saving order.', 'paid-memberships-pro' );
 		$pmpro_msgt = 'error';
@@ -611,19 +616,28 @@ if ( function_exists( 'pmpro_add_email_order_modal' ) ) {
 					<?php } ?>
 				</td>
 			</tr>
-			<tr>
-				<th scope="row" valign="top"><label for="couponamount"><?php esc_html_e( 'Coupon Amount', 'paid-memberships-pro' ); ?>:</label>
-				</th>
-				<td>
+			<?php
+				// Hiding couponamount by default.
+				$coupons = apply_filters( 'pmpro_orders_show_coupon_amounts', false );
+				if ( ! empty( $coupons ) ) { ?>
+				<tr>
+					<th scope="row" valign="top"><label for="couponamount"><?php esc_html_e( 'Coupon Amount', 'paid-memberships-pro' ); ?>:</label>
+					</th>
+					<td>
 					<?php
-					if ( in_array( 'couponamount', $read_only_fields ) && $order_id > 0 ) {
-						echo esc_html( $order->couponamount );
-					} else {
+						if ( in_array( 'couponamount', $read_only_fields ) && $order_id > 0 ) {
+							echo $order->couponamount;
+						} else {
+						?>
+							<input id="couponamount" name="couponamount" type="text" size="10" value="<?php echo esc_attr( $order->couponamount ); ?>"/>
+						<?php 
+						}
 					?>
-						<input id="couponamount" name="couponamount" type="text" size="10" value="<?php echo esc_attr( $order->couponamount ); ?>"/>
-					<?php } ?>
-				</td>
-			</tr>
+					</td>
+				</tr>
+				<?php
+				}
+			?>
 			<tr>
 				<th scope="row" valign="top"><label for="total"><?php esc_html_e( 'Total', 'paid-memberships-pro' ); ?>:</label></th>
 				<td>
@@ -635,7 +649,6 @@ if ( function_exists( 'pmpro_add_email_order_modal' ) ) {
 											<input id="total" name="total" type="text" size="10"
 												   value="<?php echo esc_attr( $order->total ); ?>"/>
 					<?php } ?>
-					<p class="description"><?php esc_html_e( 'Should be subtotal + tax - couponamount.', 'paid-memberships-pro' ); ?></p>
 				</td>
 			</tr>
 
@@ -1054,7 +1067,7 @@ if ( function_exists( 'pmpro_add_email_order_modal' ) ) {
 
 				<?php
 				// Note: only orders belonging to current levels can be filtered. There is no option for orders belonging to deleted levels
-				$levels = pmpro_getAllLevels( true, true );
+				$levels = pmpro_sort_levels_by_order( pmpro_getAllLevels( true, true ) );
 				?>
 				<select id="l" name="l">
 					<?php foreach ( $levels as $level ) { ?>
@@ -1069,7 +1082,7 @@ if ( function_exists( 'pmpro_add_email_order_modal' ) ) {
 				$sqlQuery .= "ORDER BY id DESC ";
 				$codes = $wpdb->get_results($sqlQuery, OBJECT);
 				if ( ! empty( $codes ) ) { ?>
-				<select id="discount_code" name="discount_code">
+				<select id="discount-code" name="discount-code">
 					<?php foreach ( $codes as $code ) { ?>
 						<option
 							value="<?php echo esc_attr( $code->id ); ?>" <?php selected( $discount_code, $code->id ); ?>><?php echo esc_html( $code->code ); ?></option>
@@ -1111,7 +1124,7 @@ if ( function_exists( 'pmpro_add_email_order_modal' ) ) {
 					jQuery('#predefined-date').hide();
 					jQuery('#status').hide();
 					jQuery('#l').hide();
-					jQuery('#discount_code').hide();
+					jQuery('#discount-code').hide();
 					jQuery('#from').hide();
 					jQuery('#to').hide();
 					jQuery('#submit').show();
@@ -1127,7 +1140,7 @@ if ( function_exists( 'pmpro_add_email_order_modal' ) ) {
 					jQuery('#predefined-date').hide();
 					jQuery('#status').hide();
 					jQuery('#l').hide();
-					jQuery('#discount_code').hide();
+					jQuery('#discount-code').hide();
 					jQuery('#submit').show();
 					jQuery('#from').show();
 					jQuery('#to').show();
@@ -1143,7 +1156,7 @@ if ( function_exists( 'pmpro_add_email_order_modal' ) ) {
 					jQuery('#predefined-date').show();
 					jQuery('#status').hide();
 					jQuery('#l').hide();
-					jQuery('#discount_code').hide();
+					jQuery('#discount-code').hide();
 					jQuery('#submit').show();
 					jQuery('#from').hide();
 					jQuery('#to').hide();
@@ -1159,7 +1172,7 @@ if ( function_exists( 'pmpro_add_email_order_modal' ) ) {
 					jQuery('#predefined-date').hide();
 					jQuery('#status').hide();
 					jQuery('#l').show();
-					jQuery('#discount_code').hide();
+					jQuery('#discount-code').hide();
 					jQuery('#submit').show();
 					jQuery('#from').hide();
 					jQuery('#to').hide();
@@ -1175,7 +1188,7 @@ if ( function_exists( 'pmpro_add_email_order_modal' ) ) {
 					jQuery('#predefined-date').hide();
 					jQuery('#status').hide();
 					jQuery('#l').hide();
-					jQuery('#discount_code').show();
+					jQuery('#discount-code').show();
 					jQuery('#submit').show();
 					jQuery('#from').hide();
 					jQuery('#to').hide();
@@ -1191,7 +1204,7 @@ if ( function_exists( 'pmpro_add_email_order_modal' ) ) {
 					jQuery('#predefined-date').hide();
 					jQuery('#status').show();
 					jQuery('#l').hide();
-					jQuery('#discount_code').hide();
+					jQuery('#discount-code').hide();
 					jQuery('#submit').show();
 					jQuery('#from').hide();
 					jQuery('#to').hide();
@@ -1207,7 +1220,7 @@ if ( function_exists( 'pmpro_add_email_order_modal' ) ) {
 					jQuery('#predefined-date').hide();
 					jQuery('#status').hide();
 					jQuery('#l').hide();
-					jQuery('#discount_code').hide();
+					jQuery('#discount-code').hide();
 					jQuery('#submit').show();
 					jQuery('#from').hide();
 					jQuery('#to').hide();
@@ -1306,7 +1319,7 @@ if ( function_exists( 'pmpro_add_email_order_modal' ) ) {
 			<tr class="thead">
 				<th><?php esc_html_e( 'ID', 'paid-memberships-pro' ); ?></th>
 				<th><?php esc_html_e( 'Code', 'paid-memberships-pro' ); ?></th>
-				<th><?php esc_html_e( 'Username', 'paid-memberships-pro' ); ?></th>
+				<th><?php esc_html_e( 'User', 'paid-memberships-pro' ); ?></th>
 				<?php do_action( 'pmpro_orders_extra_cols_header', $order_ids ); ?>
 				<th><?php esc_html_e( 'Level', 'paid-memberships-pro' ); ?></th>
 				<th><?php esc_html_e( 'Total', 'paid-memberships-pro' ); ?></th>
@@ -1343,8 +1356,9 @@ if ( function_exists( 'pmpro_add_email_order_modal' ) ) {
 								<a title="<?php esc_attr_e( 'Copy', 'paid-memberships-pro' ); ?>" href="<?php echo esc_url( add_query_arg( array( 'page' => 'pmpro-orders', 'order' => '-1', 'copy' => $order->id ), admin_url('admin.php' ) ) ); ?>"><?php esc_html_e( 'Copy', 'paid-memberships-pro' ); ?></a>
 							</span> |
 							<span class="delete">
-								<a href="javascript:pmpro_askfirst('<?php echo esc_attr
-								( sprintf( __( 'Deleting orders is permanent and can affect active users. Are you sure you want to delete order %s?', 'paid-memberships-pro' ), str_replace( "'", '', $order->code ) ) ); ?>', 'admin.php?page=pmpro-orders&delete=<?php echo $order->id; ?>'); void(0);"><?php esc_html_e( 'Delete', 'paid-memberships-pro' ); ?></a>
+							<?php $delete_prompt = sprintf( __( 'Deleting orders is permanent and can affect active users. Are you sure you want to delete order %s?', 'paid-memberships-pro' ), str_replace( "'", '', $order->code ) ); ?>
+								<a href='javascript:pmpro_askfirst("<?php echo esc_attr
+								( $delete_prompt ) ?>", "admin.php?page=pmpro-orders&delete=<?php echo $order->id; ?>"); void(0);'><?php esc_html_e( 'Delete', 'paid-memberships-pro' ); ?></a>
 							</span> |
 							<span class="print">
 								<a target="_blank" title="<?php esc_attr_e( 'Print', 'paid-memberships-pro' ); ?>" href="<?php echo esc_url( add_query_arg( array( 'action' => 'pmpro_orders_print_view', 'order' => $order->id ), admin_url('admin-ajax.php' ) ) ); ?>"><?php esc_html_e( 'Print', 'paid-memberships-pro' ); ?></a>
@@ -1373,7 +1387,8 @@ if ( function_exists( 'pmpro_add_email_order_modal' ) ) {
 					<td class="username column-username">
 						<?php $order->getUser(); ?>
 						<?php if ( ! empty( $order->user ) ) { ?>
-							<a href="user-edit.php?user_id=<?php echo esc_attr( $order->user->ID ); ?>"><?php echo esc_html( $order->user->user_login ); ?></a>
+							<a href="user-edit.php?user_id=<?php echo esc_attr( $order->user->ID ); ?>"><?php echo esc_html( $order->user->user_login ); ?></a><br />
+							<?php echo esc_html( $order->user->user_email ); ?>
 						<?php } elseif ( $order->user_id > 0 ) { ?>
 							[<?php esc_html_e( 'deleted', 'paid-memberships-pro' ); ?>]
 						<?php } else { ?>
@@ -1393,7 +1408,7 @@ if ( function_exists( 'pmpro_add_email_order_modal' ) ) {
 							<?php }
 						?>
 					</td>
-					<td><?php echo esc_html( pmpro_formatPrice( $order->total ) ); ?></td>
+					<td><?php echo pmpro_escape_price( pmpro_formatPrice( $order->total ) ); ?></td>
 					<td>
 						<?php
 						if ( ! empty( $order->payment_type ) ) {
@@ -1409,7 +1424,7 @@ if ( function_exists( 'pmpro_add_email_order_modal' ) ) {
 						<?php if ( ! empty( $order->billing->street ) ) { ?>
 							<?php echo esc_html( $order->billing->street ); ?><br/>
 							<?php if ( $order->billing->city && $order->billing->state ) { ?>
-								<?php echo esc_html( $order->billing->city ); ?>, <?php echo esc_html( $order->billing->state ); ?><?php echo esc_html( $order->billing->zip ); ?>
+								<?php echo esc_html( $order->billing->city ); ?>, <?php echo esc_html( $order->billing->state ); ?> <?php echo esc_html( $order->billing->zip ); ?>
 									<?php
 									if ( ! empty( $order->billing->country ) ) {
 										echo esc_html( $order->billing->country ); }

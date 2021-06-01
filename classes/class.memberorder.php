@@ -152,6 +152,68 @@
 		}
 
 		/**
+		 * Get the first order for this subscription.
+		 * Useful to find the original order from a recurring order.
+		 * @since 2.5
+		 * @return mixed Order object if found or false if not.
+		 */
+		function get_original_subscription_order( $subscription_id = '' ){
+			global $wpdb;
+			
+			// Default to use the subscription ID on this order object.
+			if ( empty( $subscription_id ) && ! empty( $this->subscription_transaction_id ) ) {
+				$subscription_id = $this->subscription_transaction_id;
+			}
+			
+			// Must have a subscription ID.
+			if ( empty( $subscription_id ) ) {
+				return false;
+			}
+			
+			// Get some other values from this order to narrow the search.
+			if ( ! empty( $this->user_id ) ) {
+				$user_id = $this->user_id;
+			} else {
+				$user_id = '';
+			}
+			if ( ! empty( $this->gateway ) ) {
+				$gateway = $this->gateway;
+			} else {
+				$gateway = '';
+			}
+			if ( ! empty( $this->gateway_environment ) ) {
+				$gateway_environment = $this->gateway_environment;
+			} else {
+				$gateway_environment = '';
+			}
+			
+			// Double check for a user_id, gateway and gateway environment.
+			$sql = $wpdb->prepare(
+				"SELECT ID
+				 FROM $wpdb->pmpro_membership_orders
+				 WHERE `subscription_transaction_id` = %s
+				   AND `user_id` = %d
+				   AND `gateway` = %s
+				   AND `gateway_environment` = %s
+				 ORDER BY id ASC
+				 LIMIT 1",
+				 array(
+					 $subscription_id,
+					 $user_id,
+					 $gateway,
+					 $gateway_environment
+				 )
+			 );
+			
+			$order_id = $wpdb->get_var( $sql );
+			if ( ! empty( $order_id ) ) {
+				return new MemberOrder( $order_id );
+			} else {
+				return false;
+			}
+		}
+
+		/**
 		 * Set up the Gateway class to use with this order.
 		 *
 		 * @param string $gateway Name/label for the gateway to set.
@@ -494,6 +556,8 @@
 
 			//set values array for filter
 			$values = array("price" => $price, "tax_state" => $tax_state, "tax_rate" => $tax_rate);
+			if(!empty($this->billing->street))
+				$values['billing_street'] = $this->billing->street;
 			if(!empty($this->billing->state))
 				$values['billing_state'] = $this->billing->state;
 			if(!empty($this->billing->city))
@@ -536,6 +600,10 @@
 		 * Change the timestamp of an order by passing in year, month, day, time.
 		 *
 		 * $time should be adjusted for local timezone.
+		 *
+		 * NOTE: This function should no longer be used. Instead, set the timestamp
+		 * for the order directly and call the MemberOrder->saveOrder() function.
+		 * This function is no longer used on the /adminpages/orders.php page.
 		 */
 		function updateTimestamp($year, $month, $day, $time = NULL)
 		{
@@ -592,10 +660,12 @@
 			//calculate total
 			if(!empty($this->total))
 				$total = $this->total;
-			else {
+			elseif ( ! isset( $this->total ) || $this->total === '' ) {
 				$total = (float)$amount + (float)$tax;
 				$this->total = $total;
-			}			
+			} else {
+				$total = 0;
+			}
 			
 			//these fix some warnings/notices
 			if(empty($this->billing))
@@ -767,22 +837,24 @@
 		/**
 		 * Get a random code to use as the order code.
 		 */
-		function getRandomCode()
-		{
+		function getRandomCode() {
 			global $wpdb;
 
-			while(empty($code))
-			{
+			// We mix this with the seed to make sure we get unique codes.
+			static $count = 0;
+			$count++;
 
-				$scramble = md5(AUTH_KEY . current_time('timestamp') . SECURE_AUTH_KEY);
-				$code = substr($scramble, 0, 10);
-				$code = apply_filters("pmpro_random_code", $code, $this);	//filter
-				$check = $wpdb->get_var("SELECT id FROM $wpdb->pmpro_membership_orders WHERE code = '$code' LIMIT 1");
-				if($check || is_numeric($code))
+			while( empty( $code ) ) {
+				$scramble = md5( AUTH_KEY . microtime() . SECURE_AUTH_KEY . $count );
+				$code = substr( $scramble, 0, 10 );
+				$code = apply_filters( 'pmpro_random_code', $code, $this );	//filter
+				$check = $wpdb->get_var( "SELECT id FROM $wpdb->pmpro_membership_orders WHERE code = '$code' LIMIT 1" );
+				if( $check || is_numeric( $code ) ) {
 					$code = NULL;
+				}
 			}
 
-			return strtoupper($code);
+			return strtoupper( $code );
 		}
 
 		/**
@@ -946,6 +1018,58 @@
 			}
 
 			return false;
+		}
+
+		/**
+		 * Sets the billing address fields on the order object.
+		 * Checks the last order for the same sub or pulls from user meta.
+		 * @since 2.5.5
+		 */
+		function find_billing_address() {
+			global $wpdb;
+
+			if ( empty( $this->billing ) || empty( $this->billing->street ) ) {
+				// We do not already have a billing address.
+				$last_subscription_order = new MemberOrder();
+				$last_subscription_order->getLastMemberOrderBySubscriptionTransactionID( $this->subscription_transaction_id );
+				if ( ! empty( $last_subscription_order->billing ) && ! empty( $last_subscription_order->billing->street ) ) {
+					// Last order in subscription has biling information. Pull data from there. 
+					$this->Address1    = $last_subscription_order->billing->street;
+					$this->City        = $last_subscription_order->billing->city;
+					$this->State       = $last_subscription_order->billing->state;
+					$this->Zip         = $last_subscription_order->billing->zip;
+					$this->CountryCode = $last_subscription_order->billing->country;
+					$this->PhoneNumber = $last_subscription_order->billing->phone;
+					$this->Email       = $wpdb->get_var("SELECT user_email FROM $wpdb->users WHERE ID = '" . $this->user_id . "' LIMIT 1");
+
+					$this->billing          = new stdClass();
+					$this->billing->name    = $last_subscription_order->billing->name;
+					$this->billing->street  = $last_subscription_order->billing->street;
+					$this->billing->city    = $last_subscription_order->billing->city;
+					$this->billing->state   = $last_subscription_order->billing->state;
+					$this->billing->zip     = $last_subscription_order->billing->zip;
+					$this->billing->country = $last_subscription_order->billing->country;
+					$this->billing->phone   = $last_subscription_order->billing->phone;
+				} else {
+					// Last order did not have billing information. Try to pull from usermeta.
+					$this->Address1    = get_user_meta( $this->user_id, "pmpro_baddress1", true );
+					$this->City        = get_user_meta( $this->user_id, "pmpro_bcity", true );
+					$this->State       = get_user_meta( $this->user_id, "pmpro_bstate", true );
+					$this->Zip         = get_user_meta( $this->user_id, "pmpro_bzip", true );
+					$this->CountryCode = get_user_meta( $this->user_id, "pmpro_bcountry", true );
+					$this->PhoneNumber = get_user_meta( $this->user_id, "pmpro_bphone", true );
+					$this->Email       = $wpdb->get_var("SELECT user_email FROM $wpdb->users WHERE ID = '" . $this->user_id . "' LIMIT 1");
+
+					$this->billing          = new stdClass();
+					$this->billing->name    = get_user_meta( $this->user_id, "pmpro_bfirstname", true ) . " " . get_user_meta( $this->user_id, "pmpro_blastname", true ) ;
+					$this->billing->street  = $this->Address1;
+					$this->billing->city    = $this->City;
+					$this->billing->state   = $this->State;
+					$this->billing->zip     = $this->Zip;
+					$this->billing->country = $this->CountryCode;
+					$this->billing->phone   = $this->PhoneNumber;
+				}
+			}
 		}
 
 		/**

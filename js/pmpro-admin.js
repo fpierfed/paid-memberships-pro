@@ -43,7 +43,7 @@ function pmpro_toggle_elements_by_selector( selector, checked ) {
  * @since v2.1
  */
 jQuery(document).ready(function() {
-	jQuery( 'input[pmpro_toggle_trigger_for]' ).change( function() {		
+	jQuery( 'input[pmpro_toggle_trigger_for]' ).on( 'change', function() {
 		pmpro_toggle_elements_by_selector( jQuery( this ).attr( 'pmpro_toggle_trigger_for' ), jQuery( this ).prop( 'checked' ) );
 	});
 });
@@ -81,13 +81,13 @@ jQuery(document).ready(function() {
 	}
 
     // Disable the webhook buttons if the API keys aren't complete yet.
-    jQuery('#stripe_publishablekey,#stripe_secretkey').bind('change keyup', function() {
+    jQuery('#stripe_publishablekey,#stripe_secretkey').on('change keyup', function() {
         pmpro_stripe_check_api_keys();
     });    
     pmpro_stripe_check_api_keys();
     
     // AJAX call to create webhook.
-    jQuery('#pmpro_stripe_create_webhook').click(function(event){
+	jQuery('#pmpro_stripe_create_webhook').on( 'click', function(event){
         event.preventDefault();
                 
 		var postData = {
@@ -120,7 +120,7 @@ jQuery(document).ready(function() {
     });
     
     // AJAX call to delete webhook.
-    jQuery('#pmpro_stripe_delete_webhook').click(function(event){
+	jQuery('#pmpro_stripe_delete_webhook').on( 'click', function(event){
         event.preventDefault();
                 
 		var postData = {
@@ -147,6 +147,39 @@ jQuery(document).ready(function() {
                 }
                 if ( response.success ) {
                     jQuery('#pmpro_stripe_create_webhook').show();
+                }				
+			}
+		})
+	});
+
+	// AJAX call to rebuild webhook.
+	jQuery('#pmpro_stripe_rebuild_webhook').on( 'click', function(event){
+        event.preventDefault();
+                
+		var postData = {
+			action: 'pmpro_stripe_rebuild_webhook',
+            secretkey: jQuery('#stripe_secretkey').val(),
+		}
+
+		jQuery.ajax({
+			type: "POST",
+			data: postData,
+			url: ajaxurl,
+			success: function( response ) {
+				response = jQuery.parseJSON( response );
+                ///console.log( response );
+                
+                jQuery( '#pmpro_stripe_webhook_notice' ).parent('div').removeClass('error')
+                jQuery( '#pmpro_stripe_webhook_notice' ).parent('div').removeClass('notice-success')
+                
+                if ( response.notice ) {
+                    jQuery('#pmpro_stripe_webhook_notice').parent('div').addClass(response.notice);
+                }
+                if ( response.message ) {
+                    jQuery('#pmpro_stripe_webhook_notice').html(response.message);
+                }
+                if ( response.success ) {
+                    jQuery('#pmpro_stripe_create_webhook').hide();
                 }				
 			}
 		})
